@@ -1,0 +1,15 @@
+backtrader
+pandas
+numpy
+yfinance
+python-binance
+python-telegram-bot
+PyYAML
+streamlit
+pytest
+scikit-optimize
+SQLAlchemy
+matplotlib
+plotly
+requests
+ta

@@ -1,0 +1,85 @@
+app:
+  log_level: INFO
+  name: TradingView Strategy Generator
+  output_dir: ./data/processed
+  version: 1.0.0
+backtesting:
+  commission: 1.0000000000000001e-11
+  default_timeframe: 5m
+  initial_capital: 10000
+  max_trades: 1000
+  slippage: 5.0000000000000005e-12
+  warmup_period: 100
+data:
+  binance:
+    api_key: Le6qOQM4552PuKjRcw5PgGprOAt1W1ZjxYVCEEUtVsUbohbfCZoo62HL3PsQL1cv
+    api_secret: kxwX5bWgtDzqcUxIwtbuhJCwRlfOXvaj4qUzVjF0cMe2c2LNAOezJ8Agn8eMiRHR
+    enabled: true
+    testnet: false
+  default_tickers:
+  - BTCUSDT
+  - ETHUSDT
+  - BTC-USD # Added for Yahoo Finance
+  yahoo_finance:
+    default_interval: 1d
+    default_period: 1y
+    enabled: true
+database:
+  backup_enabled: true
+  backup_interval: 3600
+  path: ./data/strategies.db
+  type: sqlite
+metrics:
+  primary:
+  - net_profit
+  - profit_factor
+  secondary:
+  - max_drawdown
+  - sharpe_ratio
+  - number_of_trades
+  - win_rate
+  - avg_win_loss_ratio
+  - risk_reward_ratio
+  thresholds:
+    max_drawdown: 0.2
+    min_profit_factor: 1.2
+    min_sharpe_ratio: 0.5
+optimization:
+  algorithm: random_search
+  max_iterations: 100
+  random_search:
+    cv_folds: 3
+    n_iter: 50
+  walk_forward:
+    enabled: true
+    test_ratio: 0.15
+    train_ratio: 0.7
+    validation_ratio: 0.15
+pinescript:
+  conversion_timeout: 300
+  supported_functions:
+  - sma
+  - ema
+  - rsi
+  - macd
+  - bollinger_bands
+  - stochastic
+  warning_threshold: 5
+signals:
+  enabled: true
+  max_concurrent_signals: 10
+  risk_management:
+    max_position_size: 0.1
+    stop_loss_pct: 0.02
+    take_profit_pct: 0.04
+  update_interval: 300
+telegram:
+  bot_token: 7094983748:AAFwZ8uqcyEcXJj1uUQNUdKyf7a_R3qVAlQ
+  chat_id: '-1002699048392'
+  commands:
+  - /start
+  - /help
+  - /successrate
+  - /status
+  enabled: true
+  signal_format: '{symbol} {signal_type} {price} TP:{take_profit} SL:{stop_loss}'
