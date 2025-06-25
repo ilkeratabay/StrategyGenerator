@@ -195,6 +195,127 @@ class TestDatabaseManager:
         # Signal should not be in open signals since we closed it
         assert len([s for s in open_signals if s.id == signal.id]) == 0
 
+    def test_signal_generation_engine(self, temp_db):
+        """Test signal generation engine functionality."""
+        from modules.signal_generator import SignalGenerator
+        
+        # Create a strategy for testing
+        strategy = temp_db.save_strategy(
+            name="Test MA Strategy",
+            code="""
+import backtrader as bt
+
+class TestMAStrategy(bt.Strategy):
+    params = (
+        ('fast_period', 10),
+        ('slow_period', 30),
+    )
+    
+    def __init__(self):
+        self.fast_ma = bt.indicators.SMA(self.data.close, period=self.params.fast_period)
+        self.slow_ma = bt.indicators.SMA(self.data.close, period=self.params.slow_period)
+        self.crossover = bt.indicators.CrossOver(self.fast_ma, self.slow_ma)
+    
+    def next(self):
+        if self.crossover > 0:
+            if not self.position:
+                self.buy()
+        elif self.crossover < 0:
+            if self.position:
+                self.sell()
+""",
+            strategy_type="python"
+        )
+        
+        # Initialize signal generator
+        signal_gen = SignalGenerator(temp_db)
+        
+        # Test signal generation for a strategy
+        signals = signal_gen.generate_signals_for_strategy(strategy, ['BTC-USD'], timeframe='1d')
+        
+        # Should return a list (might be empty if no signals)
+        assert isinstance(signals, list)
+        
+        # Test batch signal generation
+        all_signals = signal_gen.generate_all_signals(['BTC-USD', 'ETH-USD'])
+        assert isinstance(all_signals, list)
+
+    def test_signal_performance_tracking(self, temp_db):
+        """Test signal performance calculation."""
+        strategy = temp_db.save_strategy(
+            name="Performance Test Strategy",
+            code="# Test code",
+            strategy_type="python"
+        )
+        
+        # Create multiple signals with different outcomes
+        signals_data = [
+            {'strategy_id': strategy.id, 'symbol': 'BTCUSDT', 'signal_type': 'BUY', 'price': 50000.0, 'quantity': 1.0},
+            {'strategy_id': strategy.id, 'symbol': 'BTCUSDT', 'signal_type': 'BUY', 'price': 51000.0, 'quantity': 1.0},
+            {'strategy_id': strategy.id, 'symbol': 'BTCUSDT', 'signal_type': 'BUY', 'price': 52000.0, 'quantity': 1.0},
+        ]
+        
+        saved_signals = []
+        for signal_data in signals_data:
+            signal = temp_db.save_signal(signal_data)
+            saved_signals.append(signal)
+        
+        # Close signals with different outcomes
+        saved_signals[0].close_signal(51000.0)  # +1000 profit
+        saved_signals[1].close_signal(50500.0)  # -500 loss
+        saved_signals[2].close_signal(53000.0)  # +1000 profit
+        
+        # Update signals in database
+        session = temp_db.get_session()
+        try:
+            for signal in saved_signals:
+                session.merge(signal)
+            session.commit()
+        finally:
+            session.close()
+        
+        # Test performance calculation
+        perf = temp_db.get_strategy_performance(strategy.id)
+        
+        assert perf['total_signals'] == 3
+        assert perf['profitable_signals'] == 2
+        assert perf['win_rate'] == 2/3
+        assert perf['total_pnl'] == 1500.0  # 1000 - 500 + 1000
+        assert perf['avg_pnl'] == 500.0
+
+    def test_telegram_signal_integration(self, temp_db):
+        """Test Telegram integration for signals."""
+        from modules.telegram_bot import TelegramSignalBot
+        
+        strategy = temp_db.save_strategy(
+            name="Telegram Test Strategy",
+            code="# Test code",
+            strategy_type="python"
+        )
+        
+        # Create signal
+        signal_data = {
+            'strategy_id': strategy.id,
+            'symbol': 'BTCUSDT',
+            'signal_type': 'BUY',
+            'price': 50000.0,
+            'take_profit': 52000.0,
+            'stop_loss': 48000.0,
+            'quantity': 1.0
+        }
+        
+        signal = temp_db.save_signal(signal_data)
+        
+        # Test signal formatting for Telegram
+        bot = TelegramSignalBot(None)  # Mock bot token
+        message = bot.format_signal_message(signal)
+        
+        assert 'BTCUSDT' in message
+        assert 'BUY' in message
+        assert '50000' in message
+        assert 'TP:52000' in message
+        assert 'SL:48000' in message
+
 class TestPineScriptConverter:
     """Test Pine Script to Python conversion."""
     

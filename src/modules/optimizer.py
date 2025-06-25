@@ -199,6 +199,17 @@ class RandomSearchOptimizer:
         
         execution_time = time.time() - start_time
         
+        # Ensure we have valid best_params even if all iterations failed
+        if best_params is None and all_results:
+            # Find the best result from all_results, even if all scores were -inf
+            best_result = max(all_results, key=lambda x: x['score'])
+            best_params = best_result['params']
+            best_score = best_result['score']
+        elif best_params is None:
+            # If no results at all, create default parameters
+            best_params = param_space.sample_random()
+            best_score = -np.inf
+        
         return OptimizationResult(
             best_params=best_params,
             best_score=best_score,
@@ -331,9 +342,12 @@ class StrategyOptimizer:
             """Objective function for optimization."""
             try:
                 if walk_forward:
-                    return self._walk_forward_objective(strategy_class, symbol, params, objective)
+                    result = self._walk_forward_objective(strategy_class, symbol, params, objective)
                 else:
-                    return self._simple_objective(strategy_class, symbol, params, objective)
+                    result = self._simple_objective(strategy_class, symbol, params, objective)
+                
+                return result
+                
             except Exception as e:
                 self.logger.warning(f"Objective function failed for params {params}: {e}")
                 return -np.inf
@@ -375,18 +389,39 @@ class StrategyOptimizer:
     def _walk_forward_objective(self, strategy_class, symbol: str, params: Dict[str, Any],
                                objective: str) -> float:
         """Objective function with walk-forward validation."""
-        # For simplicity, we'll run multiple backtests on different time periods
+        # Simplified walk-forward: run backtests on different time periods
         # and average the results
         
         scores = []
-        periods = ['6mo', '1y', '2y']  # Different time periods
+        # Use more practical periods that work with our data limitations
+        periods_config = [
+            {'period': '60d', 'timeframe': '5m'},  # Recent 60 days with 5m data
+            {'period': '1y', 'timeframe': '1d'},   # 1 year with daily data
+        ]
         
-        for period in periods:
+        for i, config in enumerate(periods_config):
             try:
-                # Modify backtest to use different periods
-                # This is a simplified implementation
+                self.logger.debug(f"Walk-forward period {i+1}/{len(periods_config)}: {config}")
+                
+                # Calculate start and end dates based on period
+                from datetime import datetime, timedelta
+                end_date = datetime.now()
+                if config['period'] == '60d':
+                    start_date = end_date - timedelta(days=60)
+                elif config['period'] == '1y':
+                    start_date = end_date - timedelta(days=365)
+                else:
+                    # Default fallback
+                    start_date = end_date - timedelta(days=365)
+                
+                # Run backtest with specific time period and timeframe
                 results = self.backtest_engine.run_backtest(
-                    strategy_class, symbol, parameters=params
+                    strategy_class, 
+                    symbol, 
+                    parameters=params,
+                    start_date=start_date.strftime('%Y-%m-%d'),
+                    end_date=end_date.strftime('%Y-%m-%d'),
+                    timeframe=config['timeframe']
                 )
                 
                 if objective == 'profit_factor':
@@ -400,23 +435,31 @@ class StrategyOptimizer:
                 else:
                     score = results.profit_factor
                 
-                if not np.isnan(score) and not np.isinf(score):
+                if not np.isnan(score) and not np.isinf(score) and score > -1000:  # Sanity check
                     scores.append(score)
+                    self.logger.debug(f"Walk-forward period {i+1} score: {score:.4f}")
+                else:
+                    self.logger.warning(f"Invalid score for period {i+1}: {score}")
                     
             except Exception as e:
-                self.logger.debug(f"Walk-forward backtest failed for period {period}: {e}")
+                self.logger.warning(f"Walk-forward backtest failed for period {i+1}: {e}")
+                # Continue with next period instead of breaking
                 continue
         
         if not scores:
+            self.logger.warning("No valid scores from walk-forward validation")
             return -np.inf
         
         # Return average score with penalty for high variance
         mean_score = np.mean(scores)
-        std_score = np.std(scores)
+        std_score = np.std(scores) if len(scores) > 1 else 0
         
         # Penalize high variance (less robust strategies)
-        penalty = std_score / (mean_score + 1e-6) if mean_score > 0 else 1
-        return mean_score * (1 - min(penalty, 0.5))
+        penalty = std_score / (abs(mean_score) + 1e-6) if mean_score != 0 else 0
+        final_score = mean_score * (1 - min(penalty, 0.3))  # Reduced penalty cap
+        
+        self.logger.debug(f"Walk-forward final score: {final_score:.4f} (mean: {mean_score:.4f}, std: {std_score:.4f})")
+        return final_score
     
     def create_param_space_from_strategy(self, strategy_class) -> ParameterSpace:
         """Automatically create parameter space from strategy parameters."""

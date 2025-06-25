@@ -1,0 +1,59 @@
+# TradingView Strategy Generator Configuration
+# Copy this file to config.yaml and customize your settings
+
+# Application settings
+app:
+  name: "TradingView Strategy Generator"
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"
+
+# Database configuration
+database:
+  type: "sqlite"
+  path: "./data/strategies.db"
+
+# Data source configuration
+data:
+  yahoo_finance:
+    enabled: true
+  binance:
+    enabled: false
+    api_key: ""
+    api_secret: ""
+    testnet: true
+  default_tickers:
+    - "BTC-USD"
+    - "ETH-USD"
+    - "AAPL"
+    - "TSLA"
+
+# Backtesting configuration
+backtesting:
+  initial_capital: 10000
+  commission: 0.001  # 0.1%
+  slippage: 0.0005   # 0.05%
+
+# Optimization configuration
+optimization:
+  algorithm: "random_search"  # random_search or bayesian
+  max_iterations: 100
+  walk_forward:
+    enabled: true
+    train_ratio: 0.7
+    validation_ratio: 0.15
+    test_ratio: 0.15
+
+# Signal generation configuration
+signals:
+  enabled: false
+  update_interval: 300  # seconds
+  max_open_signals_per_strategy: 3
+
+# Telegram bot configuration
+telegram:
+  enabled: false
+  bot_token: ""
+  chat_id: ""
+  send_signals: true
+  send_daily_summary: true

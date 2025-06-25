@@ -264,16 +264,60 @@ class BacktestEngine:
         # Calculate period if dates not provided
         if not start_date or not end_date:
             period = "1y"  # Default to 1 year
+            if yf_interval == "5m":
+                period = "60d" # Max period for 5m interval
+                self.logger.info("Defaulting to 60 days for 5m interval as start/end dates not provided.")
             df = self.data_feed.get_yahoo_data(symbol, period=period, interval=yf_interval)
         else:
             # For date ranges, we need to use period approach as yfinance doesn't support date ranges well with intervals
-            df = self.data_feed.get_yahoo_data(symbol, period="2y", interval=yf_interval)
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            delta_days = (end_dt - start_dt).days
+
+            period_to_fetch = "2y" # Default for longer ranges
+            if yf_interval == "5m":
+                if delta_days > 60:
+                    self.logger.warning(
+                        f"Requested date range ({delta_days} days) for 5m interval exceeds Yahoo Finance limit of 60 days. "
+                        f"Fetching data for the last 60 days from the end_date or up to today if end_date is in future."
+                    )
+                    # Adjust start_date to be 60 days before end_date, or now if end_date is in future
+                    effective_end_dt = min(end_dt, datetime.now())
+                    effective_start_dt = effective_end_dt - timedelta(days=59) # 59 to include the end_date itself makes 60 days
+                    
+                    # yfinance period needs to be calculated based on effective_start_dt and effective_end_dt
+                    # However, yfinance period parameter is like "1y", "60d".
+                    # We will fetch a bit more and then filter.
+                    # The most reliable way is to fetch '60d' if the original request was for more than that for 5m.
+                    period_to_fetch = "60d" 
+                    # We will use the original start_date and end_date for filtering after fetching
+                    # to ensure we only get what the user asked for within the 60d yfinance limitation.
+                elif delta_days <= 0:
+                    self.logger.warning(f"End date ({end_date}) is before or same as start date ({start_date}). Fetching data for 1 day.")
+                    period_to_fetch = "1d" # Fetch 1 day if range is invalid
+                else:
+                    period_to_fetch = f"{delta_days}d"
+
+
+            df = self.data_feed.get_yahoo_data(symbol, period=period_to_fetch, interval=yf_interval)
             
             # Filter by date range if provided
-            if start_date:
-                df = df[df.index >= start_date]
-            if end_date:
-                df = df[df.index <= end_date]
+            # Convert string dates to datetime objects for comparison if not already
+            if isinstance(df.index, pd.DatetimeIndex):
+                if start_date:
+                    df = df[df.index >= pd.to_datetime(start_date).tz_localize(df.index.tzinfo)]
+                if end_date:
+                    df = df[df.index <= pd.to_datetime(end_date).tz_localize(df.index.tzinfo)]
+            else:
+                # Fallback if index is not DatetimeIndex (should not happen with yfinance)
+                self.logger.warning("DataFrame index is not DatetimeIndex. Date filtering might be inaccurate.")
+                if start_date:
+                    df = df[df.index >= start_date]
+                if end_date:
+                    df = df[df.index <= end_date]
+
+        if df.empty:
+            raise ValueError(f"No data found for {symbol} with period {period_to_fetch} and interval {yf_interval} after filtering for dates {start_date}-{end_date}")
         
         return self.data_feed.prepare_backtrader_data(df)
     

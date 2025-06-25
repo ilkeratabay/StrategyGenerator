@@ -77,7 +77,7 @@ class ConfigManager:
             print(f"Configuration saved to {self.config_path}")
         except Exception as e:
             print(f"Error saving configuration: {e}")
-    
+
     def reload_config(self) -> None:
         """Reload configuration from file."""
         self._load_config()

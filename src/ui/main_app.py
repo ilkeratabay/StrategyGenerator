@@ -255,6 +255,10 @@ if short_condition
                 with st.spinner("Converting Pine Script..."):
                     python_code, warnings = st.session_state.converter.convert(pinescript_code)
                 
+                # Store converted code in session state for saving
+                st.session_state.converted_code = python_code
+                st.session_state.conversion_warnings = warnings
+                
                 # Show warnings if any
                 if warnings:
                     st.warning(f"Conversion completed with {len(warnings)} warnings:")
@@ -264,30 +268,62 @@ if short_condition
                 # Display converted code
                 st.code(python_code, language='python')
                 
-                # Option to save strategy
-                st.markdown("---")
-                col1_save, col2_save = st.columns(2)
-                
-                with col1_save:
-                    strategy_name = st.text_input("Strategy Name:", value="ConvertedStrategy")
-                
-                with col2_save:
-                    if st.button("💾 Save Strategy"):
-                        try:
-                            strategy = st.session_state.db.save_strategy(
-                                name=strategy_name,
-                                code=python_code,
-                                strategy_type="python",
-                                description="Converted from Pine Script"
-                            )
-                            st.success(f"Strategy '{strategy_name}' saved successfully!")
-                        except Exception as e:
-                            st.error(f"Error saving strategy: {e}")
-                
             except ConversionError as e:
                 st.error(f"Conversion failed: {e}")
             except Exception as e:
                 st.error(f"Unexpected error: {e}")
+        
+        # Show save option if we have converted code
+        if 'converted_code' in st.session_state:
+            # Option to save strategy
+            st.markdown("---")
+            col1_save, col2_save = st.columns(2)
+            
+            with col1_save:
+                strategy_name = st.text_input("Strategy Name:", value="ConvertedStrategy")
+            
+            with col2_save:
+                if st.button("💾 Save Strategy"):
+                    try:
+                        # Check if strategy name already exists
+                        existing_strategies = st.session_state.db.get_all_strategies()
+                        existing_names = [s.name for s in existing_strategies]
+                        
+                        if strategy_name in existing_names:
+                            st.error(f"❌ Strategy name '{strategy_name}' already exists. Please choose a different name.")
+                        elif not strategy_name.strip():
+                            st.error("❌ Strategy name cannot be empty.")
+                        else:
+                            strategy = st.session_state.db.save_strategy(
+                                name=strategy_name,
+                                code=st.session_state.converted_code,
+                                strategy_type="python",
+                                description="Converted from Pine Script"
+                            )
+                            st.success(f"✅ Strategy '{strategy_name}' saved successfully!")
+                            # Clear the converted code from session state after successful save
+                            del st.session_state.converted_code
+                            if 'conversion_warnings' in st.session_state:
+                                del st.session_state.conversion_warnings
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "UNIQUE constraint failed" in error_msg:
+                            st.error(f"❌ Strategy name '{strategy_name}' already exists. Please choose a different name.")
+                        elif "NOT NULL constraint failed" in error_msg:
+                            st.error("❌ Strategy name is required.")
+                        else:
+                            st.error(f"❌ Error saving strategy: {error_msg}")
+                        # Log the full error for debugging
+                        import logging
+                        logging.error(f"Error saving strategy '{strategy_name}': {e}")
+            
+            # Show a clear button to reset
+            if st.button("🔄 Clear Conversion"):
+                if 'converted_code' in st.session_state:
+                    del st.session_state.converted_code
+                if 'conversion_warnings' in st.session_state:
+                    del st.session_state.conversion_warnings
+                st.rerun()
 
 def show_strategy_manager():
     """Display strategy management interface."""
@@ -546,37 +582,50 @@ def show_optimization():
                     walk_forward=walk_forward
                 )
                 
-                st.success("Optimization completed!")
-                
-                # Display results
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("Best Parameters")
-                    for param, value in results.best_params.items():
-                        st.write(f"**{param}:** {value}")
-                
-                with col2:
-                    st.subheader("Best Score")
-                    st.metric(objective.replace('_', ' ').title(), f"{results.best_score:.4f}")
-                    st.metric("Execution Time", f"{results.execution_time:.2f}s")
-                    st.metric("Iterations", results.iterations)
-                
-                # Show optimization progress
-                if results.all_results:
-                    st.subheader("Optimization Progress")
+                # Check if results is None or invalid
+                if results is None:
+                    st.error("Optimization failed: No results returned")
+                elif not hasattr(results, 'best_params') or results.best_params is None:
+                    st.error("Optimization failed: Invalid results returned")
+                else:
+                    st.success("Optimization completed!")
                     
-                    df_results = pd.DataFrame([
-                        {'iteration': r['iteration'], 'score': r['score']} 
-                        for r in results.all_results
-                    ])
+                    # Display results
+                    col1, col2 = st.columns(2)
                     
-                    fig = px.line(df_results, x='iteration', y='score', 
-                                title=f'{objective.title()} Over Iterations')
-                    st.plotly_chart(fig, use_container_width=True)
+                    with col1:
+                        st.subheader("Best Parameters")
+                        if results.best_params:
+                            for param, value in results.best_params.items():
+                                st.write(f"**{param}:** {value}")
+                        else:
+                            st.write("No best parameters found")
+                    
+                    with col2:
+                        st.subheader("Best Score")
+                        st.metric(objective.replace('_', ' ').title(), f"{results.best_score:.4f}")
+                        st.metric("Execution Time", f"{results.execution_time:.2f}s")
+                        st.metric("Iterations", results.iterations)
+                    
+                    # Show optimization progress
+                    if results.all_results and len(results.all_results) > 0:
+                        st.subheader("Optimization Progress")
+                        
+                        df_results = pd.DataFrame([
+                            {'iteration': r['iteration'], 'score': r['score']} 
+                            for r in results.all_results
+                        ])
+                        
+                        fig = px.line(df_results, x='iteration', y='score', 
+                                    title=f'{objective.title()} Over Iterations')
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No optimization progress data available")
                 
         except Exception as e:
             st.error(f"Optimization failed: {e}")
+            import traceback
+            st.error(f"Details: {traceback.format_exc()}")
 
 def show_live_signals():
     """Display live signals interface."""
