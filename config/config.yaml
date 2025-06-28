@@ -12,8 +12,8 @@ backtesting:
   warmup_period: 100
 data:
   binance:
-    api_key: Le6qOQM4552PuKjRcw5PgGprOAt1W1ZjxYVCEEUtVsUbohbfCZoo62HL3PsQL1cv
-    api_secret: kxwX5bWgtDzqcUxIwtbuhJCwRlfOXvaj4qUzVjF0cMe2c2LNAOezJ8Agn8eMiRHR
+    api_key: ***
+    api_secret: ***
     enabled: true
     testnet: false
   default_tickers:
