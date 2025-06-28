@@ -74,7 +74,7 @@ signals:
     take_profit_pct: 0.04
   update_interval: 300
 telegram:
-  bot_token: 7094983748:AAFwZ8uqcyEcXJj1uUQNUdKyf7a_R3qVAlQ
+  bot_token: 7094983748:***
   chat_id: '-1002699048392'
   commands:
   - /start
